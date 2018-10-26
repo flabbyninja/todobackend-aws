@@ -12,11 +12,71 @@ Parameters:
   ApplicationSubnets:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Target subnets for EC2 instances
+  DatabasePassword:
+    Type: String
+    Description: Database password
+    NoEcho: "true"
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: Target VPC
 
 Resources:
+  ApplicationDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: MySQL
+      EngineVersion: 5.7
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: 10
+      StorageType: gp2
+      MasterUsername: todobackend
+      MasterUserPassword: !Ref DatabasePassword
+      DBName: todobackend
+      VPCSecurityGroups:
+        - !Ref ApplicationDatabaseSecurityGroup
+      DBSubnetGroupName: !Ref ApplicationDatabaseSubnetGroup
+      MultiAZ: "false"
+      AvailabilityZone: !Sub ${AWS::Region}a
+      Tags:
+          - Key: Name
+            Value: !Sub ${AWS::StackName}-db
+  ApplicationDatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Application Database Subnet Group
+      SubnetIds: !Ref ApplicationSubnets
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-subnet-group
+  ApplicationDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} Application Database Security Group
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 192.0.2.0/32
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-sg
+  ApplicationToApplicationDatabaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref ApplicationDatabaseSecurityGroup
+      SourceSecurityGroupId: !Ref ApplicationAutoscalingSecurityGroup
+  ApplicationToApplicationDatabaseEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref ApplicationAutoscalingSecurityGroup
+      DestinationSecurityGroupId: !Ref ApplicationDatabaseSecurityGroup
   ApplicationAutoscalingSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
