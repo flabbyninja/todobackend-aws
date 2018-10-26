@@ -9,6 +9,10 @@ Parameters:
   ApplicationImageId:
     Type: String
     Description: ECS Amazon Machine Image (AMI) ID
+  ApplicationImageTag:
+    Type: String
+    Description: Application Docker Image Tag
+    Default: latest
   ApplicationSubnets:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Target subnets for EC2 instances
@@ -21,6 +25,98 @@ Parameters:
     Description: Target VPC
 
 Resources:
+  ApplicationService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ApplicationAutoscaling
+      - ApplicationLogGroup
+      - ApplicationLoadBalancerHttpListener
+    Properties:
+      TaskDefinition: !Ref ApplicationTaskDefinition
+      Cluster: !Ref ApplicationCluster
+      DesiredCount: !Ref ApplicationDesiredCount
+      LoadBalancers:
+        - ContainerName: todobackend
+          ContainerPort: 8000
+          TargetGroupArn: !Ref ApplicationServiceTargetGroup
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+  ApplicationTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: todobackend
+      Volumes:
+        - Name: public
+          Host:
+            SourcePath: /data/public
+      ContainerDefinitions:
+        - Name: todobackend
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/flabbyninja/todobackend:${ApplicationImageTag}
+          MemoryReservation: 395
+          Cpu: 245
+          MountPoints:
+            - SourceVolume: public
+              ContainerPath: /public
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: todobackend.settings_release
+            - Name: MYSQL_HOST
+              Value: !Sub ${ApplicationDatabase.Endpoint.Address}
+            - Name: MYSQL_USER
+              Value: todobackend
+            - Name: MYSQL_PASSWORD
+              Value: !Ref DatabasePassword
+            - Name: MYSQL_DATABASE
+              Value: todobackend
+            - Name: SECRET_KEY
+              Value: some-random-secret-should-be-here
+          Command: 
+            - uwsgi
+            - --http=0.0.0.0:8000
+            - --module=todobackend.wsgi
+            - --master
+            - --die-on-term
+            - --processes=4
+            - --threads=2
+            - --check-static=/public
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 0
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub /${AWS::StackName}/ecs/todobackend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: docker
+        - Name: collectstatic
+          Essential: false
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/flabbyninja/todobackend:${ApplicationImageTag}
+          MemoryReservation: 5
+          Cpu: 5
+          MountPoints:
+            - SourceVolume: public
+              ContainerPath: /public
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: todobackend.settings_release
+          Command:
+            - python3
+            - manage.py
+            - collectstatic
+            - --no-input
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub /${AWS::StackName}/ecs/todobackend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: docker
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${AWS::StackName}/ecs/todobackend
+      RetentionInDays: 7
   ApplicationServiceTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
