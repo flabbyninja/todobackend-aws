@@ -40,7 +40,7 @@ Resources:
       Family: todobackend-migrate
       ContainerDefinitions:
         - Name: migrate
-          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/docker-in-aws/todobackend:${ApplicationImageTag}
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/flabbyninja/todobackend:${ApplicationImageTag}
           MemoryReservation: 5
           Cpu: 5
           Environment:
@@ -161,6 +161,7 @@ Resources:
       - ApplicationAutoscaling
       - ApplicationLogGroup
       - ApplicationLoadBalancerHttpListener
+      - MigrateTask
     Properties:
       TaskDefinition: !Ref ApplicationTaskDefinition
       Cluster: !Ref ApplicationCluster
